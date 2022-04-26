@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+
+# Parse args
+service=$1
+if [[ "$service" != "combiner" && "$service" != "client" ]]; then
+    echo "Argument $1 is not valid."
+    exit 1
+fi
+
+# Generate signing key
+openssl genrsa -3 -out $service-key.pem 3072
+
+# Generate gramine config files
+gramine-manifest \
+    -Dlog_level=debug \
+    -Dentrypoint=/bin/sh \
+    -Denv_home=$CONDA_PREFIX \
+    -Dra_client_spid=$RA_CLIENT_SPID \
+    -Dra_client_linkable=$RA_CLIENT_LINKABLE \
+    fedn.manifest.template $service.manifest
+gramine-sgx-sign --key $service-key.pem --manifest $service.manifest --output $service.manifest.sgx
+gramine-sgx-get-token --output $service.token --sig $service.sig
+
+# Start service
+gramine-sgx $service -c "/opt/conda/envs/default/bin/python3.8 /opt/conda/envs/default/bin/fedn run $service -in /app/config/settings-$service.yaml --token \$SECRET_PROVISION_SECRET_STRING"
